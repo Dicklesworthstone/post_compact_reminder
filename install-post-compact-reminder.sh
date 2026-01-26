@@ -24,14 +24,17 @@
 
 set -euo pipefail
 
-VERSION="1.2.0"
+VERSION="1.2.3"
 SCRIPT_NAME="claude-post-compact-reminder"
-LOCK_FILE="/tmp/.post-compact-reminder-install.lock"
+LOCK_FILE="${TMPDIR:-/tmp}/.post-compact-reminder-install-${USER:-$(id -u)}.lock"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/Dicklesworthstone/post_compact_reminder/main/install-post-compact-reminder.sh"
 GITHUB_RELEASES_URL="https://github.com/Dicklesworthstone/post_compact_reminder/releases"
 GITHUB_API_URL="https://api.github.com/repos/Dicklesworthstone/post_compact_reminder/releases/latest"
 
 # Changelog (newest first)
+CHANGELOG_1_2_3="Security hardening: Escaped special characters in generated hook script to prevent potential code injection from custom messages."
+CHANGELOG_1_2_2="Fixed lock file permission issues in multi-user environments. Improved regex precision for Bash-based JSON parsing fallback. Added cleanup for temporary files on failure."
+CHANGELOG_1_2_1="Added pure Bash fallback for JSON parsing in hook (removing runtime jq dependency). Added symlink resolution for settings.json to support dotfile managers."
 CHANGELOG_1_2_0="Added --message/--message-file, --status --json, and --skip-deps. Hardened settings.json edits and made the hook fail-open if jq is missing or JSON is invalid. Safer self-update path resolution. Templates now ensure settings are configured."
 CHANGELOG_1_1_0="Added --status, --verbose, --restore, --diff, --interactive, --yes, --completions, --template, --show-template, --update, --changelog, --log flags. Enhanced customization support."
 CHANGELOG_1_0_0="Initial release with basic install/uninstall, dry-run, force reinstall, quiet mode, and no-color support."
@@ -374,7 +377,15 @@ render_hook_script() {
     local message="$1"
     local note="${2:-}"
     local note_line=""
+
+    # Escape backticks and dollar signs in the message to prevent expansion
+    # during heredoc generation or execution
+    message="${message//\`/\\\`}"
+    message="${message//\$/\\\$}"
+
     if [[ -n "$note" ]]; then
+        # Sanitize note (remove newlines)
+        note="${note//[$'\n\r']}"
         note_line="# $note"
     fi
 
@@ -394,9 +405,16 @@ set -e
 INPUT=\$(cat)
 SOURCE=""
 
-# Parse source when jq is available; fail-open if jq is missing or JSON is invalid
+# Parse source when jq is available; use bash regex fallback if missing
 if command -v jq &> /dev/null; then
     SOURCE=\$(echo "\$INPUT" | jq -r '.source // empty' 2>/dev/null || true)
+else
+    # Fallback: regex matching for "source": "compact"
+    # Matches "source" key preceded by { or , (and whitespace) to avoid false positives
+    REGEX='(^|[{,])[[:space:]]*"source"[[:space:]]*:[[:space:]]*"compact"'
+    if [[ "\$INPUT" =~ \$REGEX ]]; then
+        SOURCE="compact"
+    fi
 fi
 
 # Double-check source (belt and suspenders with the matcher)
@@ -437,6 +455,10 @@ import sys
 settings_file = os.environ.get("SETTINGS_FILE", "")
 if not settings_file:
     sys.exit(1)
+
+# Resolve symlinks to ensure we check the real file
+if os.path.islink(settings_file):
+    settings_file = os.path.realpath(settings_file)
 
 try:
     with open(settings_file, "r") as f:
@@ -481,6 +503,10 @@ if not settings_file or not hook_path:
     print("error: missing settings file or hook path", file=sys.stderr)
     sys.exit(1)
 
+# Resolve symlinks to ensure we edit the real file and preserve the link
+if os.path.islink(settings_file):
+    settings_file = os.path.realpath(settings_file)
+
 try:
     # Load or create settings
     if os.path.exists(settings_file):
@@ -518,6 +544,7 @@ try:
 
         # Atomic write: write to temp file then rename
         dir_name = os.path.dirname(settings_file) or '.'
+        temp_path = None
         with tempfile.NamedTemporaryFile(mode='w', dir=dir_name, delete=False, suffix='.tmp') as tf:
             json.dump(settings, tf, indent=2)
             tf.write('\n')
@@ -529,6 +556,8 @@ try:
         print('exists')
 
 except Exception as e:
+    if 'temp_path' in locals() and temp_path and os.path.exists(temp_path):
+        os.remove(temp_path)
     print(f'error: {e}', file=sys.stderr)
     sys.exit(1)
 MERGE_SCRIPT
@@ -562,6 +591,10 @@ if not settings_file:
     print("error: missing settings file", file=sys.stderr)
     sys.exit(1)
 
+# Resolve symlinks to ensure we edit the real file and preserve the link
+if os.path.islink(settings_file):
+    settings_file = os.path.realpath(settings_file)
+
 try:
     if not os.path.exists(settings_file):
         sys.exit(0)
@@ -594,6 +627,7 @@ try:
 
     # Atomic write: write to temp file then rename
     dir_name = os.path.dirname(settings_file) or '.'
+    temp_path = None
     with tempfile.NamedTemporaryFile(mode='w', dir=dir_name, delete=False, suffix='.tmp') as tf:
         json.dump(settings, tf, indent=2)
         tf.write('\n')
@@ -602,6 +636,8 @@ try:
     shutil.move(temp_path, settings_file)
 
 except Exception as e:
+    if 'temp_path' in locals() and temp_path and os.path.exists(temp_path):
+        os.remove(temp_path)
     print(f'error: {e}', file=sys.stderr)
     sys.exit(1)
 REMOVE_SCRIPT
@@ -1844,7 +1880,7 @@ main() {
                 ;;
             --template)
                 if [[ -z "${2:-}" ]] || [[ "$2" == -* ]]; then
-                    log_error "--template requires a value (minimal, detailed, checklist)"
+                    log_error "--template requires a value (minimal, detailed, checklist, default)"
                     exit 1
                 fi
                 action="template"

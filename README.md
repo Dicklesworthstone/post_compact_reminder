@@ -1,9 +1,14 @@
 # Post-Compact Reminder for Claude Code
 
 <div align="center">
+  <img src="pcr_illustration.webp" alt="Post-Compact Reminder - Stop Claude from forgetting your project rules after context compaction">
+</div>
+
+<div align="center">
 
 **Stop Claude from forgetting your project rules after context compaction.**
 
+[![CI](https://github.com/Dicklesworthstone/post_compact_reminder/actions/workflows/ci.yml/badge.svg)](https://github.com/Dicklesworthstone/post_compact_reminder/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Bash 4.0+](https://img.shields.io/badge/bash-4.0%2B-blue?style=flat-square)](https://www.gnu.org/software/bash/)
 [![Hook: SessionStart](https://img.shields.io/badge/hook-SessionStart-green?style=flat-square)](https://docs.anthropic.com/en/docs/claude-code/hooks)
@@ -478,7 +483,7 @@ rm /tmp/.post-compact-reminder-install.lock
 
 - **SessionStart hooks are non-blocking.** Claude sees the reminder in its context but isn't *forced* to act on it before proceeding. In practice, Claude reliably follows the instruction to re-read AGENTS.md, but there's no hard enforcement mechanism.
 - **Global only.** The hook installs to `~/.claude/settings.json`, which applies to all projects. There's no per-project override mechanism built in (though you could use `SETTINGS_DIR` to point at a project-local settings file).
-- **Requires `jq` at runtime.** The hook script uses `jq` to parse the JSON input from Claude Code. If `jq` is somehow removed after installation, the hook will silently fail.
+- **Requires `jq` at runtime.** The hook script uses `jq` to parse the JSON input from Claude Code. If `jq` is removed after installation, the hook will silently do nothing.
 - **No Windows support.** This is a Bash script. It works on Linux, macOS, and WSL.
 
 ---

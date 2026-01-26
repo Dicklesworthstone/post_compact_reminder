@@ -52,8 +52,10 @@ append_exit_trap() {
     local existing=""
     existing=$(trap -p EXIT | sed -E "s/^trap -- '(.*)' EXIT$/\\1/")
     if [[ -n "$existing" ]]; then
+        # shellcheck disable=SC2064
         trap "${new_cmd}; ${existing}" EXIT
     else
+        # shellcheck disable=SC2064
         trap "$new_cmd" EXIT
     fi
 }
@@ -124,7 +126,6 @@ STATUS_JSON="false"
 LOG_FILE=""
 HAS_JQ="false"
 HAS_PYTHON="false"
-NO_COLOR="false"
 NO_UNICODE="false"
 
 log_to_file() {
@@ -159,7 +160,6 @@ set_box_ascii() {
 }
 
 apply_no_color() {
-    NO_COLOR="true"
     RED='' GREEN='' YELLOW='' BLUE='' CYAN='' MAGENTA='' WHITE='' BOLD='' DIM='' ITALIC='' UNDERLINE='' NC=''
     if [[ "$NO_UNICODE" == "true" ]]; then
         set_box_ascii
@@ -176,8 +176,8 @@ apply_no_unicode() {
     ICON_STEP='>'
     ICON_SUCCESS='+'
     ICON_SKIP='.'
-    ICON_DRYRUN='DRY'
-    ICON_SPARKLES='OK'
+    ICON_DRYRUN='*'
+    ICON_SPARKLES='*'
     ICON_BANNER='*'
     ICON_ZAP='!'
     BULLET='*'
@@ -189,7 +189,12 @@ apply_no_unicode() {
 repeat_char() {
     local ch="$1"
     local count="$2"
-    printf '%*s' "$count" '' | tr ' ' "$ch"
+    local out=""
+    local i
+    for ((i = 0; i < count; i++)); do
+        out+="$ch"
+    done
+    printf '%s' "$out"
 }
 
 # -----------------------------------------------------------------------------
@@ -2125,11 +2130,11 @@ print_summary() {
     echo ""
     if [[ "$dry_run" == "true" ]]; then
         echo -e "${BLUE}${BOX_TL}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_TR}${NC}"
-        echo -e "${BLUE}${BOX_V}${NC}  ${BLUE}${BOLD}📋 DRY RUN${NC} ${DIM}${ITALIC}— No changes were made${NC}                           ${BLUE}${BOX_V}${NC}"
+        echo -e "${BLUE}${BOX_V}${NC}  ${BLUE}${BOLD}${ICON_DRYRUN} DRY RUN${NC} ${DIM}${ITALIC}${EM_DASH} No changes were made${NC}                           ${BLUE}${BOX_V}${NC}"
         echo -e "${BLUE}${BOX_BL}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_BR}${NC}"
     else
         echo -e "${GREEN}${BOX_TL}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_TR}${NC}"
-        echo -e "${GREEN}${BOX_V}${NC}  ${GREEN}${BOLD}✨ Installation complete!${NC}                                     ${GREEN}${BOX_V}${NC}"
+        echo -e "${GREEN}${BOX_V}${NC}  ${GREEN}${BOLD}${ICON_SPARKLES} Installation complete!${NC}                                     ${GREEN}${BOX_V}${NC}"
         echo -e "${GREEN}${BOX_BL}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_H}${BOX_BR}${NC}"
     fi
     echo ""
@@ -2182,7 +2187,7 @@ print_summary() {
         echo ""
         echo -e "    ${WHITE}\$ ${GREEN}echo '{\"source\":\"compact\"}' | ~/.local/bin/claude-post-compact-reminder${NC}"
         echo ""
-        echo -e "  ${DIM}${ITALIC}Tip: Changes take effect immediately — no restart needed for the hook itself.${NC}"
+        echo -e "  ${DIM}${ITALIC}Tip: Changes take effect immediately ${EM_DASH} no restart needed for the hook itself.${NC}"
         echo -e "  ${DIM}${ITALIC}     Claude Code only needs restarting after the initial installation.${NC}"
         echo ""
     fi

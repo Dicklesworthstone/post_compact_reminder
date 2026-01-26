@@ -124,7 +124,7 @@ STATUS_JSON="false"
 LOG_FILE=""
 HAS_JQ="false"
 HAS_PYTHON="false"
-NO_UNICODE="false"
+NO_UNICODE=""
 
 log_to_file() {
     if [[ -n "$LOG_FILE" ]]; then

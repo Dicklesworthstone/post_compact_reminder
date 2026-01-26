@@ -27,7 +27,7 @@ set -euo pipefail
 VERSION="1.2.4"
 SCRIPT_NAME="claude-post-compact-reminder"
 LOCK_FILE="${TMPDIR:-/tmp}/.post-compact-reminder-install-${USER:-$(id -u)}.lock"
-GITHUB_RAW_URL="https://raw.githubusercontent.com/Dicklesworthstone/post_compact_reminder/main/install-post-compact-reminder.sh"
+GITHUB_RAW_URL="https://github.com/Dicklesworthstone/post_compact_reminder/raw/refs/heads/main/install-post-compact-reminder.sh"
 GITHUB_RELEASES_URL="https://github.com/Dicklesworthstone/post_compact_reminder/releases"
 GITHUB_API_URL="https://api.github.com/repos/Dicklesworthstone/post_compact_reminder/releases/latest"
 

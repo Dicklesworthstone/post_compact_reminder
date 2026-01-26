@@ -19,7 +19,7 @@
 <h3>Quick Install</h3>
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/post_compact_reminder/main/install-post-compact-reminder.sh?cb=$(date +%s)" | bash
+curl -fsSL https://github.com/Dicklesworthstone/post_compact_reminder/raw/refs/heads/main/install-post-compact-reminder.sh | bash
 ```
 
 </div>
@@ -116,13 +116,13 @@ The installer validates dependencies, tests the hook after installation, and rep
 ### Quick Install (Recommended)
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/post_compact_reminder/main/install-post-compact-reminder.sh?cb=$(date +%s)" | bash
+curl -fsSL https://github.com/Dicklesworthstone/post_compact_reminder/raw/refs/heads/main/install-post-compact-reminder.sh | bash
 ```
 
 ### Download and Run Locally
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/post_compact_reminder/main/install-post-compact-reminder.sh?cb=$(date +%s)" \
+curl -fsSL https://github.com/Dicklesworthstone/post_compact_reminder/raw/refs/heads/main/install-post-compact-reminder.sh \
   -o install-post-compact-reminder.sh
 chmod +x install-post-compact-reminder.sh
 ./install-post-compact-reminder.sh

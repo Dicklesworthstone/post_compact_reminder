@@ -1,0 +1,16 @@
+# Backup files
+*.bak
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Lock files
+*.lock

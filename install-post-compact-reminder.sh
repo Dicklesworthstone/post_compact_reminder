@@ -351,7 +351,9 @@ TEMPLATE_CHECKLIST="Context compacted. Before continuing:
 - [ ] Run test suite
 - [ ] Check git status"
 
-TEMPLATE_DEFAULT="Context was just compacted. Please reread AGENTS.md to refresh your understanding of project conventions and agent coordination patterns."
+TEMPLATE_DEFAULT="
+🚨 *IMPORTANT*: Context was just compacted. Please reread AGENTS.md to refresh your understanding of project conventions and agent coordination patterns.
+"
 
 # -----------------------------------------------------------------------------
 # Banner
@@ -658,9 +660,7 @@ fi
 
 # Double-check source (belt and suspenders with the matcher)
 if [[ "\$SOURCE" == "compact" ]]; then
-    printf '%s\n' "<post-compact-reminder>"
     printf '%s\n' "\$MESSAGE"
-    printf '%s\n' "</post-compact-reminder>"
 fi
 
 # SessionStart hooks don't block, just exit 0
@@ -938,22 +938,30 @@ test_hook() {
 # -----------------------------------------------------------------------------
 # Extract rendered message from hook output
 # -----------------------------------------------------------------------------
+# Extract message lines from hook output
+# Handles both new format (plain text) and legacy format (with XML tags)
 extract_message_lines() {
     local output="$1"
-    local in_message="false"
-    local line
-    while IFS= read -r line; do
-        if [[ "$line" == "<post-compact-reminder>" ]]; then
-            in_message="true"
-            continue
-        fi
-        if [[ "$line" == "</post-compact-reminder>" ]]; then
-            break
-        fi
-        if [[ "$in_message" == "true" ]]; then
-            printf '%s\n' "$line"
-        fi
-    done <<< "$output"
+    # Check if output has legacy XML tags
+    if [[ "$output" == *"<post-compact-reminder>"* ]]; then
+        local in_message="false"
+        local line
+        while IFS= read -r line; do
+            if [[ "$line" == "<post-compact-reminder>" ]]; then
+                in_message="true"
+                continue
+            fi
+            if [[ "$line" == "</post-compact-reminder>" ]]; then
+                break
+            fi
+            if [[ "$in_message" == "true" ]]; then
+                printf '%s\n' "$line"
+            fi
+        done <<< "$output"
+    else
+        # New format: output is the message directly
+        printf '%s' "$output"
+    fi
 }
 
 get_rendered_message_lines() {
@@ -1456,12 +1464,8 @@ do_interactive() {
     echo -e "${WHITE}${BOLD}Preview:${NC}"
     echo ""
     local -a message_lines
-    local -a preview_lines
     mapfile -t message_lines < <(split_lines "$chosen_message")
-    preview_lines=("<post-compact-reminder>")
-    preview_lines+=("${message_lines[@]}")
-    preview_lines+=("</post-compact-reminder>")
-    print_box "box" "  " "${MAGENTA}" "" 57 "${preview_lines[@]}"
+    print_box "box" "  " "${MAGENTA}" "" 57 "${message_lines[@]}"
     echo ""
 
     echo -n "Install with this message? [Y/n]: "
@@ -1551,10 +1555,7 @@ do_show_template() {
 
     local -a message_lines
     mapfile -t message_lines < <(get_rendered_message_lines "$script_path")
-    local -a box_lines=("<post-compact-reminder>")
-    box_lines+=("${message_lines[@]}")
-    box_lines+=("</post-compact-reminder>")
-    print_box "box" "  " "${MAGENTA}" "" 57 "${box_lines[@]}"
+    print_box "box" "  " "${MAGENTA}" "" 57 "${message_lines[@]}"
 
     echo ""
     echo -e "${DIM}File: $script_path${NC}"
@@ -1599,11 +1600,9 @@ do_template() {
         echo ""
         echo -e "${WHITE}${BOLD}Preview:${NC}"
         echo ""
-        echo -e "  ${CYAN}<post-compact-reminder>${NC}"
         echo "$chosen_message" | while IFS= read -r line; do
             echo "  $line"
         done
-        echo -e "  ${CYAN}</post-compact-reminder>${NC}"
         return 0
     fi
 
@@ -1688,11 +1687,9 @@ do_message() {
         echo ""
         echo -e "${WHITE}${BOLD}Preview:${NC}"
         echo ""
-        echo -e "  ${CYAN}<post-compact-reminder>${NC}"
         echo "$chosen_message" | while IFS= read -r line; do
             echo "  $line"
         done
-        echo -e "  ${CYAN}</post-compact-reminder>${NC}"
         return 0
     fi
 
@@ -2367,17 +2364,14 @@ print_summary() {
     echo ""
     local -a message_lines
     if [[ "$dry_run" == "true" ]]; then
-        message_lines=("$TEMPLATE_DEFAULT")
+        mapfile -t message_lines < <(split_lines "$TEMPLATE_DEFAULT")
     else
         mapfile -t message_lines < <(get_rendered_message_lines "$script_path")
         if [[ ${#message_lines[@]} -eq 0 ]]; then
-            message_lines=("$TEMPLATE_DEFAULT")
+            mapfile -t message_lines < <(split_lines "$TEMPLATE_DEFAULT")
         fi
     fi
-    local -a preview_lines=("<post-compact-reminder>")
-    preview_lines+=("${message_lines[@]}")
-    preview_lines+=("</post-compact-reminder>")
-    print_box "box" "  " "${MAGENTA}" "" 57 "${preview_lines[@]}"
+    print_box "box" "  " "${MAGENTA}" "" 57 "${message_lines[@]}"
     echo ""
 
     if [[ "$dry_run" != "true" ]]; then

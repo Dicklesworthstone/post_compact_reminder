@@ -977,6 +977,7 @@ do_interactive() {
     log_step "Creating directories..."
     mkdir -p "$hook_dir"
     mkdir -p "$settings_dir"
+    mkdir -p "$settings_dir"
 
     log_step "Creating hook script with custom message..."
 

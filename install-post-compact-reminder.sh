@@ -1843,7 +1843,7 @@ do_update() {
 
     # Get the path to this script (avoid overwriting the wrong file)
     local this_script=""
-    local source_name="${BASH_SOURCE[0]}"
+    local source_name="${BASH_SOURCE[0]:-}"
     local candidate=""
 
     if [[ -n "$source_name" ]]; then
@@ -2690,6 +2690,6 @@ main() {
     fi
 }
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ -z "${BASH_SOURCE[0]:-}" ]] || [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi

@@ -1,0 +1,144 @@
+# CI Workflow for post_compact_reminder
+# Runs on every push and PR to main
+#
+# Validates shell scripts with ShellCheck, syntax checks, installation testing,
+# and version consistency between VERSION file and installer script.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Minimal permissions - read-only access to repository contents
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: '.'
+          severity: warning
+          additional_files: 'install-post-compact-reminder.sh'
+
+  syntax:
+    name: Bash Syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check installer syntax
+        run: bash -n install-post-compact-reminder.sh
+
+  install-test:
+    name: Installation Test (${{ matrix.os }})
+    needs: [shellcheck, syntax]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          if [[ "$(uname)" == "Darwin" ]]; then
+            brew install jq 2>/dev/null || true
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          fi
+
+      - name: Run installer (dry-run)
+        run: |
+          chmod +x install-post-compact-reminder.sh
+          ./install-post-compact-reminder.sh --dry-run
+
+      - name: Run installer
+        run: |
+          ./install-post-compact-reminder.sh --yes
+
+      - name: Verify hook script exists
+        run: |
+          test -x "$HOME/.local/bin/claude-post-compact-reminder"
+          echo "Hook script is installed and executable"
+
+      - name: Test hook with compact source
+        run: |
+          output=$(echo '{"session_id": "test-ci", "source": "compact"}' | "$HOME/.local/bin/claude-post-compact-reminder")
+          if echo "$output" | grep -q "post-compact-reminder"; then
+            echo "Hook correctly outputs reminder for compact source"
+          else
+            echo "::error::Hook did not output expected reminder"
+            echo "Output was: $output"
+            exit 1
+          fi
+
+      - name: Test hook with startup source (should be silent)
+        run: |
+          output=$(echo '{"session_id": "test-ci", "source": "startup"}' | "$HOME/.local/bin/claude-post-compact-reminder")
+          if [[ -z "$output" ]]; then
+            echo "Hook correctly silent for startup source"
+          else
+            echo "::error::Hook should not output anything for startup source"
+            echo "Output was: $output"
+            exit 1
+          fi
+
+      - name: Check status
+        run: ./install-post-compact-reminder.sh --status
+
+      - name: Test uninstall (dry-run)
+        run: ./install-post-compact-reminder.sh --uninstall --dry-run
+
+  version-check:
+    name: Version Consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check VERSION file exists
+        run: |
+          if [[ ! -f VERSION ]]; then
+            echo "::warning::VERSION file not found"
+            exit 0
+          fi
+
+      - name: Verify version matches
+        run: |
+          if [[ ! -f VERSION ]]; then
+            exit 0
+          fi
+
+          file_version=$(cat VERSION | tr -d '\r\n')
+          script_version=$(grep -m1 'VERSION=' install-post-compact-reminder.sh | cut -d'"' -f2)
+
+          if [[ "$file_version" != "$script_version" ]]; then
+            echo "::error::VERSION file ($file_version) does not match installer script ($script_version)"
+            exit 1
+          fi
+
+          echo "Versions are consistent: $file_version"

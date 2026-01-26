@@ -7,11 +7,15 @@
 #   ./install-post-compact-reminder.sh
 #   curl -fsSL <url> | bash
 #
-# Options:
-#   --help, -h      Show help
-#   --dry-run, -n   Preview changes without modifying anything
-#   --uninstall     Remove the hook
-#   --force         Reinstall even if already installed
+# Options (see --help for full list):
+#   --help, -h        Show help
+#   --dry-run, -n     Preview changes without modifying anything
+#   --uninstall       Remove the hook
+#   --force           Reinstall even if already installed
+#   --message         Use a custom reminder message
+#   --message-file    Use a custom reminder message from a file
+#   --status          Show installation status
+#   --skip-deps       Do not auto-install missing dependencies
 #
 # Environment variables:
 #   HOOK_DIR=/path    Override hook script location (default: ~/.local/bin)
@@ -20,12 +24,15 @@
 
 set -euo pipefail
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 SCRIPT_NAME="claude-post-compact-reminder"
 LOCK_FILE="/tmp/.post-compact-reminder-install.lock"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/Dicklesworthstone/post_compact_reminder/main/install-post-compact-reminder.sh"
+GITHUB_RELEASES_URL="https://github.com/Dicklesworthstone/post_compact_reminder/releases"
+GITHUB_API_URL="https://api.github.com/repos/Dicklesworthstone/post_compact_reminder/releases/latest"
 
 # Changelog (newest first)
+CHANGELOG_1_2_0="Added --message/--message-file, --status --json, and --skip-deps. Hardened settings.json edits and made the hook fail-open if jq is missing or JSON is invalid. Safer self-update path resolution. Templates now ensure settings are configured."
 CHANGELOG_1_1_0="Added --status, --verbose, --restore, --diff, --interactive, --yes, --completions, --template, --show-template, --update, --changelog, --log flags. Enhanced customization support."
 CHANGELOG_1_0_0="Initial release with basic install/uninstall, dry-run, force reinstall, quiet mode, and no-color support."
 
@@ -78,6 +85,8 @@ BOX_H='─' BOX_V='│'
 QUIET="false"
 VERBOSE="false"
 YES_FLAG="false"
+SKIP_DEPS="false"
+STATUS_JSON="false"
 LOG_FILE=""
 HAS_JQ="false"
 HAS_PYTHON="false"
@@ -151,14 +160,18 @@ show_help() {
     echo -e "  ${GREEN}--uninstall${NC}, ${GREEN}--remove${NC}  Remove the hook and settings entry"
     echo -e "  ${GREEN}--force${NC}, ${GREEN}-f${NC}           Reinstall even if already at latest version"
     echo -e "  ${GREEN}--yes${NC}, ${GREEN}-y${NC}             Skip confirmation prompts"
+    echo -e "  ${GREEN}--skip-deps${NC}          Do not auto-install missing dependencies"
     echo ""
     echo -e "${CYAN}${BOLD}${UNDERLINE}CUSTOMIZATION OPTIONS${NC}"
     echo -e "  ${GREEN}--interactive${NC}, ${GREEN}-i${NC}     Interactive setup with template selection"
     echo -e "  ${GREEN}--template${NC} ${MAGENTA}<name>${NC}    Apply preset template (minimal|detailed|checklist|default)"
+    echo -e "  ${GREEN}--message${NC} ${MAGENTA}<text>${NC}     Use a custom reminder message (single-line)"
+    echo -e "  ${GREEN}--message-file${NC} ${MAGENTA}<file>${NC} Use a custom reminder message from a file"
     echo -e "  ${GREEN}--show-template${NC}       Show currently installed reminder message"
     echo ""
     echo -e "${CYAN}${BOLD}${UNDERLINE}DIAGNOSTIC OPTIONS${NC}"
     echo -e "  ${GREEN}--status${NC}, ${GREEN}--check${NC}     Show installation health and configuration"
+    echo -e "  ${GREEN}--json${NC}                Output status as JSON (use with --status)"
     echo -e "  ${GREEN}--diff${NC}                Show changes between installed and new version"
     echo -e "  ${GREEN}--verbose${NC}, ${GREEN}-V${NC}        Enable verbose/debug output"
     echo -e "  ${GREEN}--log${NC} ${MAGENTA}<file>${NC}         Log all operations to specified file"
@@ -190,6 +203,9 @@ show_help() {
     echo -e "  ${DIM}${ITALIC}# Apply minimal template${NC}"
     echo -e "  ${WHITE}./install-post-compact-reminder.sh --template minimal${NC}"
     echo ""
+    echo -e "  ${DIM}${ITALIC}# Custom message from a file${NC}"
+    echo -e "  ${WHITE}./install-post-compact-reminder.sh --message-file ./reminder.txt${NC}"
+    echo ""
     echo -e "  ${DIM}${ITALIC}# Preview changes${NC}"
     echo -e "  ${WHITE}./install-post-compact-reminder.sh --dry-run${NC}"
     echo ""
@@ -204,6 +220,11 @@ show_help() {
 # -----------------------------------------------------------------------------
 # Dependency checks and auto-installation
 # -----------------------------------------------------------------------------
+detect_dependencies() {
+    command -v jq &> /dev/null && HAS_JQ="true" || HAS_JQ="false"
+    command -v python3 &> /dev/null && HAS_PYTHON="true" || HAS_PYTHON="false"
+}
+
 detect_package_manager() {
     if command -v apt-get &> /dev/null; then
         echo "apt"
@@ -253,17 +274,13 @@ check_dependencies() {
     local allow_install="${1:-true}"
     local missing=()
 
-    if command -v jq &> /dev/null; then
-        HAS_JQ="true"
-    else
-        HAS_JQ="false"
+    detect_dependencies
+
+    if [[ "$HAS_JQ" != "true" ]]; then
         missing+=("jq")
     fi
 
-    if command -v python3 &> /dev/null; then
-        HAS_PYTHON="true"
-    else
-        HAS_PYTHON="false"
+    if [[ "$HAS_PYTHON" != "true" ]]; then
         missing+=("python3")
     fi
 
@@ -321,16 +338,11 @@ check_dependencies() {
 
     # Verify installation
     local still_missing=()
-    if command -v jq &> /dev/null; then
-        HAS_JQ="true"
-    else
-        HAS_JQ="false"
+    detect_dependencies
+    if [[ "$HAS_JQ" != "true" ]]; then
         still_missing+=("jq")
     fi
-    if command -v python3 &> /dev/null; then
-        HAS_PYTHON="true"
-    else
-        HAS_PYTHON="false"
+    if [[ "$HAS_PYTHON" != "true" ]]; then
         still_missing+=("python3")
     fi
 
@@ -358,7 +370,14 @@ get_installed_version() {
 # -----------------------------------------------------------------------------
 # Hook script content
 # -----------------------------------------------------------------------------
-generate_hook_script() {
+render_hook_script() {
+    local message="$1"
+    local note="${2:-}"
+    local note_line=""
+    if [[ -n "$note" ]]; then
+        note_line="# $note"
+    fi
+
     cat << HOOK_SCRIPT
 #!/usr/bin/env bash
 # Version: ${VERSION}
@@ -367,18 +386,24 @@ generate_hook_script() {
 #
 # This hook fires when source="compact" (configured via matcher in settings.json)
 # and outputs a reminder that Claude sees in its context.
+${note_line}
 
 set -e
 
 # Read JSON input from Claude Code
 INPUT=\$(cat)
-SOURCE=\$(echo "\$INPUT" | jq -r '.source // empty')
+SOURCE=""
+
+# Parse source when jq is available; fail-open if jq is missing or JSON is invalid
+if command -v jq &> /dev/null; then
+    SOURCE=\$(echo "\$INPUT" | jq -r '.source // empty' 2>/dev/null || true)
+fi
 
 # Double-check source (belt and suspenders with the matcher)
 if [[ "\$SOURCE" == "compact" ]]; then
     cat <<'EOF'
 <post-compact-reminder>
-Context was just compacted. Please reread AGENTS.md to refresh your understanding of project conventions and agent coordination patterns.
+${message}
 </post-compact-reminder>
 EOF
 fi
@@ -386,6 +411,10 @@ fi
 # SessionStart hooks don't block, just exit 0
 exit 0
 HOOK_SCRIPT
+}
+
+generate_hook_script() {
+    render_hook_script "$TEMPLATE_DEFAULT"
 }
 
 # -----------------------------------------------------------------------------
@@ -400,23 +429,28 @@ check_settings_has_hook() {
         return 1
     fi
 
-    python3 -c "
+    SETTINGS_FILE="$settings_file" python3 - << 'PY' 2>/dev/null
 import json
+import os
 import sys
 
+settings_file = os.environ.get("SETTINGS_FILE", "")
+if not settings_file:
+    sys.exit(1)
+
 try:
-    with open('$settings_file', 'r') as f:
+    with open(settings_file, "r") as f:
         settings = json.load(f)
 
-    hooks = settings.get('hooks', {}).get('SessionStart', [])
+    hooks = settings.get("hooks", {}).get("SessionStart", [])
     for hook_group in hooks:
-        for hook in hook_group.get('hooks', []):
-            if 'post-compact-reminder' in hook.get('command', ''):
+        for hook in hook_group.get("hooks", []):
+            if "post-compact-reminder" in hook.get("command", ""):
                 sys.exit(0)
     sys.exit(1)
 except Exception:
     sys.exit(1)
-" 2>/dev/null
+PY
 }
 
 add_hook_to_settings() {
@@ -434,15 +468,18 @@ add_hook_to_settings() {
         cp "$settings_file" "${settings_file}.bak" 2>/dev/null || true
     fi
 
-    python3 << MERGE_SCRIPT
+    SETTINGS_FILE="$settings_file" HOOK_PATH="$hook_path" python3 << 'MERGE_SCRIPT'
 import json
 import os
 import sys
 import tempfile
 import shutil
 
-settings_file = "$settings_file"
-hook_path = "$hook_path"
+settings_file = os.environ.get("SETTINGS_FILE", "")
+hook_path = os.environ.get("HOOK_PATH", "")
+if not settings_file or not hook_path:
+    print("error: missing settings file or hook path", file=sys.stderr)
+    sys.exit(1)
 
 try:
     # Load or create settings
@@ -513,14 +550,17 @@ remove_hook_from_settings() {
     # Create backup before modifying
     cp "$settings_file" "${settings_file}.bak" 2>/dev/null || true
 
-    python3 << REMOVE_SCRIPT
+    SETTINGS_FILE="$settings_file" python3 << 'REMOVE_SCRIPT'
 import json
 import os
 import sys
 import tempfile
 import shutil
 
-settings_file = "$settings_file"
+settings_file = os.environ.get("SETTINGS_FILE", "")
+if not settings_file:
+    print("error: missing settings file", file=sys.stderr)
+    sys.exit(1)
 
 try:
     if not os.path.exists(settings_file):
@@ -585,6 +625,19 @@ test_hook() {
 }
 
 # -----------------------------------------------------------------------------
+# JSON helpers
+# -----------------------------------------------------------------------------
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+# -----------------------------------------------------------------------------
 # Status check
 # -----------------------------------------------------------------------------
 do_status() {
@@ -595,8 +648,69 @@ do_status() {
     local settings_file="${settings_dir}/settings.json"
 
     # Quick dependency check (just set flags, don't install)
-    command -v jq &> /dev/null && HAS_JQ="true" || HAS_JQ="false"
-    command -v python3 &> /dev/null && HAS_PYTHON="true" || HAS_PYTHON="false"
+    detect_dependencies
+
+    if [[ "$STATUS_JSON" == "true" ]]; then
+        local script_exists="false"
+        local script_executable="false"
+        local installed_version=""
+        local update_available="false"
+        local settings_exists="false"
+        local hook_configured_json="null"
+        local backup_exists="false"
+        local hook_test_ran="false"
+        local hook_test_passed_json="null"
+
+        if [[ -f "$script_path" ]]; then
+            script_exists="true"
+            installed_version=$(get_installed_version "$script_path")
+            if [[ -x "$script_path" ]]; then
+                script_executable="true"
+            fi
+        fi
+
+        if [[ -n "$installed_version" && "$installed_version" != "$VERSION" ]]; then
+            update_available="true"
+        fi
+
+        if [[ -f "$settings_file" ]]; then
+            settings_exists="true"
+            if [[ "$HAS_PYTHON" == "true" ]]; then
+                if check_settings_has_hook "$settings_file"; then
+                    hook_configured_json="true"
+                else
+                    hook_configured_json="false"
+                fi
+            fi
+            if [[ -f "${settings_file}.bak" ]]; then
+                backup_exists="true"
+            fi
+        fi
+
+        if [[ -x "$script_path" ]]; then
+            hook_test_ran="true"
+            if test_hook "$script_path"; then
+                hook_test_passed_json="true"
+            else
+                hook_test_passed_json="false"
+            fi
+        fi
+
+        printf '{\n'
+        printf '  "version": "%s",\n' "$(json_escape "$VERSION")"
+        printf '  "paths": {"script": "%s", "settings": "%s"},\n' \
+            "$(json_escape "$script_path")" "$(json_escape "$settings_file")"
+        printf '  "hook_script": {"exists": %s, "executable": %s, "installed_version": "%s", "update_available": %s},\n' \
+            "$script_exists" "$script_executable" "$(json_escape "${installed_version:-}")" "$update_available"
+        printf '  "settings": {"exists": %s, "hook_configured": %s, "backup_exists": %s},\n' \
+            "$settings_exists" "$hook_configured_json" "$backup_exists"
+        printf '  "dependencies": {"jq": %s, "python3": %s},\n' \
+            "$HAS_JQ" "$HAS_PYTHON"
+        printf '  "hook_test": {"ran": %s, "passed": %s}\n' \
+            "$hook_test_ran" "$hook_test_passed_json"
+        printf '}\n'
+        return 0
+    fi
 
     print_banner
 
@@ -866,32 +980,16 @@ do_interactive() {
 
     log_step "Creating hook script with custom message..."
 
-    cat > "$script_path" << CUSTOM_HOOK
-#!/usr/bin/env bash
-# Version: ${VERSION}
-# SessionStart hook: Remind Claude to reread AGENTS.md after compaction
-# Generated by interactive setup
-
-set -e
-
-INPUT=\$(cat)
-SOURCE=\$(echo "\$INPUT" | jq -r '.source // empty')
-
-if [[ "\$SOURCE" == "compact" ]]; then
-    cat <<'EOF'
-<post-compact-reminder>
-${chosen_message}
-</post-compact-reminder>
-EOF
-fi
-
-exit 0
-CUSTOM_HOOK
+    render_hook_script "$chosen_message" "Generated by interactive setup" > "$script_path"
 
     chmod +x "$script_path"
     log_success "Created $script_path"
 
     # Update settings
+    if [[ "$HAS_PYTHON" != "true" ]]; then
+        log_error "python3 not found; cannot update settings.json"
+        return 1
+    fi
     log_step "Updating settings.json..."
     local settings_file="${settings_dir}/settings.json"
     local hook_path_for_settings
@@ -965,7 +1063,8 @@ do_show_template() {
 do_template() {
     local template_name="$1"
     local hook_dir="$2"
-    local dry_run="$3"
+    local settings_dir="$3"
+    local dry_run="$4"
 
     local script_path="${hook_dir}/${SCRIPT_NAME}"
 
@@ -1003,27 +1102,7 @@ do_template() {
 
     mkdir -p "$hook_dir"
 
-    cat > "$script_path" << TEMPLATE_HOOK
-#!/usr/bin/env bash
-# Version: ${VERSION}
-# SessionStart hook: Remind Claude to reread AGENTS.md after compaction
-# Template: ${template_name}
-
-set -e
-
-INPUT=\$(cat)
-SOURCE=\$(echo "\$INPUT" | jq -r '.source // empty')
-
-if [[ "\$SOURCE" == "compact" ]]; then
-    cat <<'EOF'
-<post-compact-reminder>
-${chosen_message}
-</post-compact-reminder>
-EOF
-fi
-
-exit 0
-TEMPLATE_HOOK
+    render_hook_script "$chosen_message" "Template: ${template_name}" > "$script_path"
 
     chmod +x "$script_path"
     log_success "Applied '$template_name' template to $script_path"
@@ -1031,6 +1110,114 @@ TEMPLATE_HOOK
     # Test
     if test_hook "$script_path"; then
         log_success "Hook test passed"
+    fi
+
+    # Ensure settings.json is configured
+    if [[ "$HAS_PYTHON" == "true" ]]; then
+        log_step "Updating settings.json..."
+        local settings_file="${settings_dir}/settings.json"
+        local hook_path_for_settings
+        local default_hook_dir="$HOME/.local/bin"
+        if [[ "$hook_dir" == "$default_hook_dir" ]]; then
+            # Use $HOME for portability when using default location
+            hook_path_for_settings="\$HOME/.local/bin/${SCRIPT_NAME}"
+        else
+            # Use absolute path for custom HOOK_DIR
+            hook_path_for_settings="$script_path"
+        fi
+        add_hook_to_settings "$settings_file" "$hook_path_for_settings" "false" > /dev/null
+        log_success "Settings updated"
+    else
+        log_warn "python3 not found; skipping settings.json update"
+    fi
+
+    echo ""
+    echo -e "${YELLOW}⚡ Restart Claude Code for changes to take effect.${NC}"
+}
+
+# -----------------------------------------------------------------------------
+# Apply a custom message
+# -----------------------------------------------------------------------------
+do_message() {
+    local message_arg="$1"
+    local message_type="$2"
+    local hook_dir="$3"
+    local settings_dir="$4"
+    local dry_run="$5"
+
+    local script_path="${hook_dir}/${SCRIPT_NAME}"
+    local chosen_message=""
+
+    case "$message_type" in
+        inline)
+            chosen_message="$message_arg"
+            ;;
+        file)
+            if [[ ! -f "$message_arg" ]]; then
+                log_error "Message file not found: $message_arg"
+                return 1
+            fi
+            chosen_message="$(cat "$message_arg")"
+            ;;
+        *)
+            log_error "Unknown message type: $message_type"
+            return 1
+            ;;
+    esac
+
+    # Trim a single trailing newline for cleaner formatting
+    chosen_message="${chosen_message%$'\n'}"
+
+    if [[ -z "$chosen_message" ]]; then
+        log_error "Message is empty"
+        return 1
+    fi
+
+    log_info "Applying custom message"
+    echo ""
+
+    if [[ "$dry_run" == "true" ]]; then
+        log_step "[dry-run] Would create $script_path with custom message"
+        echo ""
+        echo -e "${WHITE}${BOLD}Preview:${NC}"
+        echo ""
+        echo -e "  ${CYAN}<post-compact-reminder>${NC}"
+        echo "$chosen_message" | while IFS= read -r line; do
+            echo "  $line"
+        done
+        echo -e "  ${CYAN}</post-compact-reminder>${NC}"
+        return 0
+    fi
+
+    mkdir -p "$hook_dir"
+    mkdir -p "$settings_dir"
+
+    render_hook_script "$chosen_message" "Custom message" > "$script_path"
+    chmod +x "$script_path"
+    log_success "Created $script_path"
+
+    if [[ "$HAS_PYTHON" == "true" ]]; then
+        log_step "Updating settings.json..."
+        local settings_file="${settings_dir}/settings.json"
+        local hook_path_for_settings
+        local default_hook_dir="$HOME/.local/bin"
+        if [[ "$hook_dir" == "$default_hook_dir" ]]; then
+            hook_path_for_settings="\$HOME/.local/bin/${SCRIPT_NAME}"
+        else
+            hook_path_for_settings="$script_path"
+        fi
+        add_hook_to_settings "$settings_file" "$hook_path_for_settings" "false" > /dev/null
+        log_success "Settings updated"
+    else
+        log_error "python3 not found; cannot update settings.json"
+        return 1
+    fi
+
+    log_step "Testing hook..."
+    if test_hook "$script_path"; then
+        log_success "Hook test passed"
+    else
+        log_warn "Hook test inconclusive"
     fi
 
     echo ""
@@ -1045,6 +1232,9 @@ do_changelog() {
 
     echo -e "${WHITE}${BOLD}${UNDERLINE}Changelog${NC}"
     echo ""
+    echo -e "  ${GREEN}${BOLD}v1.2.0${NC}"
+    echo -e "  ${DIM}$CHANGELOG_1_2_0${NC}"
+    echo ""
     echo -e "  ${GREEN}${BOLD}v1.1.0${NC}"
     echo -e "  ${DIM}$CHANGELOG_1_1_0${NC}"
     echo ""
@@ -1054,7 +1244,7 @@ do_changelog() {
 }
 
 # -----------------------------------------------------------------------------
-# Self-update from GitHub
+# Self-update from GitHub Releases (with SHA256 checksum verification)
 # -----------------------------------------------------------------------------
 do_update() {
     local dry_run="$1"
@@ -1068,15 +1258,34 @@ do_update() {
         return 1
     fi
 
-    # Fetch remote version
-    local remote_script
-    remote_script=$(curl -fsSL "$GITHUB_RAW_URL" 2>/dev/null) || {
-        log_error "Failed to fetch from GitHub"
-        return 1
-    }
+    # Cache-busting query param to defeat CDN caching
+    local cache_bust
+    cache_bust="?t=$(date +%s)"
 
-    local remote_version
-    remote_version=$(echo "$remote_script" | grep -m1 '^VERSION=' | cut -d'"' -f2)
+    # Try to get latest version from GitHub Releases API first
+    local remote_version=""
+    local use_releases="false"
+    local release_info
+    release_info=$(curl -fsSL "${GITHUB_API_URL}${cache_bust}" 2>/dev/null) || true
+
+    if [[ -n "$release_info" ]]; then
+        remote_version=$(echo "$release_info" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"v[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
+        if [[ -n "$remote_version" ]]; then
+            use_releases="true"
+            log_verbose "Found release version via API: $remote_version"
+        fi
+    fi
+
+    # Fallback: fetch from raw GitHub URL to check version
+    local remote_script=""
+    if [[ -z "$remote_version" ]]; then
+        log_verbose "Releases API unavailable, falling back to raw URL"
+        remote_script=$(curl -fsSL "${GITHUB_RAW_URL}${cache_bust}" 2>/dev/null) || {
+            log_error "Failed to fetch from GitHub"
+            return 1
+        }
+        remote_version=$(echo "$remote_script" | grep -m1 '^VERSION=' | cut -d'"' -f2)
+    fi
 
     if [[ -z "$remote_version" ]]; then
         log_error "Could not determine remote version"
@@ -1086,6 +1295,11 @@ do_update() {
     echo ""
     echo -e "  Current version: ${CYAN}${VERSION}${NC}"
     echo -e "  Remote version:  ${GREEN}${remote_version}${NC}"
+    if [[ "$use_releases" == "true" ]]; then
+        echo -e "  Source:          ${DIM}GitHub Releases (with checksum verification)${NC}"
+    else
+        echo -e "  Source:          ${DIM}GitHub Raw (no checksum verification)${NC}"
+    fi
     echo ""
 
     if [[ "$VERSION" == "$remote_version" ]]; then
@@ -1108,17 +1322,121 @@ do_update() {
         fi
     fi
 
-    # Get the path to this script
-    local this_script
-    this_script=$(realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")
+    # Get the path to this script (avoid overwriting the wrong file)
+    local this_script=""
+    local source_name="${BASH_SOURCE[0]}"
+    local candidate=""
+
+    if [[ -n "$source_name" ]]; then
+        candidate="$source_name"
+        if command -v realpath &> /dev/null; then
+            candidate=$(realpath "$candidate" 2>/dev/null || true)
+        elif command -v readlink &> /dev/null; then
+            candidate=$(readlink -f "$candidate" 2>/dev/null || true)
+        fi
+        if [[ -n "$candidate" && -f "$candidate" ]]; then
+            this_script="$candidate"
+        fi
+    fi
+
+    if [[ -z "$this_script" ]]; then
+        candidate=$(command -v install-post-compact-reminder.sh 2>/dev/null || true)
+        if [[ -n "$candidate" && -f "$candidate" ]]; then
+            this_script="$candidate"
+        fi
+    fi
+
+    case "$this_script" in
+        ""|/dev/fd/*|/proc/self/fd/*)
+            log_error "Could not resolve installer path. Run from a file instead of stdin."
+            return 1
+            ;;
+    esac
+
+    if [[ ! -w "$this_script" ]]; then
+        log_error "Installer path is not writable: $this_script"
+        return 1
+    fi
+
+    # Download the new version
+    local tmp_script
+    tmp_script=$(mktemp "${TMPDIR:-/tmp}/post-compact-reminder-update.XXXXXX")
+    # shellcheck disable=SC2064
+    trap "rm -f '$tmp_script'" EXIT
+
+    if [[ "$use_releases" == "true" ]]; then
+        # Download from GitHub Releases
+        local release_url="${GITHUB_RELEASES_URL}/download/v${remote_version}/install-post-compact-reminder.sh"
+        local checksum_url="${GITHUB_RELEASES_URL}/download/v${remote_version}/install-post-compact-reminder.sh.sha256"
+
+        log_step "Downloading v${remote_version} from GitHub Releases..."
+        curl -fsSL "${release_url}${cache_bust}" -o "$tmp_script" 2>/dev/null || {
+            log_error "Failed to download release v${remote_version}"
+            rm -f "$tmp_script"
+            return 1
+        }
+
+        # Verify SHA256 checksum
+        local expected_checksum
+        expected_checksum=$(curl -fsSL "${checksum_url}${cache_bust}" 2>/dev/null) || true
+
+        if [[ -n "$expected_checksum" ]]; then
+            local actual_checksum=""
+            if command -v sha256sum &> /dev/null; then
+                actual_checksum=$(sha256sum "$tmp_script" | awk '{print $1}')
+            elif command -v shasum &> /dev/null; then
+                actual_checksum=$(shasum -a 256 "$tmp_script" | awk '{print $1}')
+            fi
+
+            if [[ -n "$actual_checksum" ]]; then
+                if [[ "$expected_checksum" != "$actual_checksum" ]]; then
+                    log_error "Checksum verification FAILED!"
+                    echo -e "  Expected: ${GREEN}${expected_checksum}${NC}"
+                    echo -e "  Actual:   ${RED}${actual_checksum}${NC}"
+                    log_error "The downloaded file may be corrupted or tampered with."
+                    rm -f "$tmp_script"
+                    return 1
+                fi
+                log_success "SHA256 checksum verified"
+            else
+                log_warn "sha256sum/shasum not available; skipping checksum verification"
+            fi
+        else
+            log_warn "Checksum file not found; skipping verification"
+        fi
+    else
+        # Fallback: use the already-fetched script from raw URL
+        echo "$remote_script" > "$tmp_script"
+    fi
+
+    # Validate bash syntax before replacing
+    if ! bash -n "$tmp_script" 2>/dev/null; then
+        log_error "Downloaded script has syntax errors! Aborting update."
+        rm -f "$tmp_script"
+        return 1
+    fi
+    log_verbose "Bash syntax validation passed"
+
+    # Verify the downloaded script has a VERSION string
+    local downloaded_version
+    downloaded_version=$(grep -m1 '^VERSION=' "$tmp_script" | cut -d'"' -f2)
+    if [[ -z "$downloaded_version" ]]; then
+        log_error "Downloaded script is missing VERSION string! Aborting update."
+        rm -f "$tmp_script"
+        return 1
+    fi
 
     # Create backup
     cp "$this_script" "${this_script}.bak"
     log_verbose "Backup created at ${this_script}.bak"
 
-    # Update
-    echo "$remote_script" > "$this_script"
-    chmod +x "$this_script"
+    # Atomic replacement: copy to temp in same dir, then mv (preserves inode on rename)
+    local tmp_dest
+    tmp_dest=$(mktemp "${this_script}.tmp.XXXXXX")
+    cp "$tmp_script" "$tmp_dest"
+    chmod +x "$tmp_dest"
+    mv -f "$tmp_dest" "$this_script"
+    rm -f "$tmp_script"
 
     log_success "Updated to version $remote_version"
     echo ""
@@ -1143,7 +1461,7 @@ _post_compact_reminder() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    opts="--help -h --version -v --dry-run -n --uninstall --remove --force -f --quiet -q --no-color --status --check --verbose -V --restore --diff --interactive -i --yes -y --completions --template --show-template --update --changelog --log"
+    opts="--help -h --version -v --dry-run -n --uninstall --remove --force -f --quiet -q --no-color --status --check --json --verbose -V --restore --diff --interactive -i --yes -y --skip-deps --completions --template --message --message-file --show-template --update --changelog --log"
 
     case "$prev" in
         --template)
@@ -1152,6 +1470,10 @@ _post_compact_reminder() {
             ;;
         --completions)
             COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") )
+            return 0
+            ;;
+        --message-file)
+            COMPREPLY=( $(compgen -f -- "$cur") )
             return 0
             ;;
         --log)
@@ -1193,6 +1515,7 @@ _install_post_compact_reminder() {
         '--no-color[Disable colored output]::'
         '--status[Show installation status]::'
         '--check[Show installation status]::'
+        '--json[Output status as JSON (use with --status)]::'
         '--verbose[Enable verbose output]::'
         '-V[Enable verbose output]::'
         '--restore[Restore settings.json from backup]::'
@@ -1201,8 +1524,11 @@ _install_post_compact_reminder() {
         '-i[Interactive setup mode]::'
         '--yes[Skip confirmation prompts]::'
         '-y[Skip confirmation prompts]::'
+        '--skip-deps[Do not auto-install missing dependencies]::'
         '--completions[Generate shell completions]:shell:(bash zsh)'
         '--template[Apply a preset template]:template:(minimal detailed checklist default)'
+        '--message[Use a custom reminder message]:message:'
+        '--message-file[Use a custom message from a file]:file:_files'
         '--show-template[Show current installed message]::'
         '--update[Self-update from GitHub]::'
         '--changelog[Show version history]::'
@@ -1357,13 +1683,17 @@ do_uninstall() {
 
     # Remove from settings
     if [[ -f "$settings_file" ]]; then
-        if check_settings_has_hook "$settings_file"; then
-            remove_hook_from_settings "$settings_file" "$dry_run"
-            if [[ "$dry_run" != "true" ]]; then
-                log_success "Removed hook from settings.json"
-            fi
+        if [[ "$HAS_PYTHON" != "true" ]]; then
+            log_warn "python3 not found; skipping settings.json update"
         else
-            log_skip "Hook not found in settings.json"
+            if check_settings_has_hook "$settings_file"; then
+                remove_hook_from_settings "$settings_file" "$dry_run"
+                if [[ "$dry_run" != "true" ]]; then
+                    log_success "Removed hook from settings.json"
+                fi
+            else
+                log_skip "Hook not found in settings.json"
+            fi
         fi
     else
         log_skip "Settings file not found"
@@ -1469,6 +1799,7 @@ main() {
     local force="false"
     local action=""  # Track which standalone action to perform
     local action_arg=""  # Argument for the action (if needed)
+    local action_arg_type=""  # Argument type for the action (if needed)
 
     # Parse arguments (using while + shift for flags with values)
     while [[ $# -gt 0 ]]; do
@@ -1500,6 +1831,10 @@ main() {
                 YES_FLAG="true"
                 shift
                 ;;
+            --skip-deps)
+                SKIP_DEPS="true"
+                shift
+                ;;
 
             # Customization options
             --interactive|-i)
@@ -1513,6 +1848,26 @@ main() {
                 fi
                 action="template"
                 action_arg="$2"
+                shift 2
+                ;;
+            --message)
+                if [[ -z "${2:-}" ]] || [[ "$2" == -* ]]; then
+                    log_error "--message requires a value"
+                    exit 1
+                fi
+                action="message"
+                action_arg="$2"
+                action_arg_type="inline"
+                shift 2
+                ;;
+            --message-file)
+                if [[ -z "${2:-}" ]] || [[ "$2" == -* ]]; then
+                    log_error "--message-file requires a file path"
+                    exit 1
+                fi
+                action="message"
+                action_arg="$2"
+                action_arg_type="file"
                 shift 2
                 ;;
             --show-template)
@@ -1532,6 +1887,10 @@ main() {
             # Diagnostic options
             --status|--check)
                 action="status"
+                shift
+                ;;
+            --json)
+                STATUS_JSON="true"
                 shift
                 ;;
             --diff)
@@ -1590,6 +1949,11 @@ main() {
         esac
     done
 
+    if [[ "$STATUS_JSON" == "true" && "$action" != "status" ]]; then
+        log_error "--json is only valid with --status"
+        exit 1
+    fi
+
     # Initialize log file if specified
     if [[ -n "$LOG_FILE" ]]; then
         log_to_file "=== Session started: $(date) ==="
@@ -1632,11 +1996,15 @@ main() {
 
     # Check dependencies
     local allow_install="true"
-    if [[ "$dry_run" == "true" ]]; then
+    if [[ "$dry_run" == "true" || "$SKIP_DEPS" == "true" ]]; then
         allow_install="false"
     fi
-    if ! check_dependencies "$allow_install"; then
-        exit 1
+    if [[ "$uninstall" == "true" || "$action" == "update" ]]; then
+        detect_dependencies
+    else
+        if ! check_dependencies "$allow_install"; then
+            exit 1
+        fi
     fi
 
     log_info "Hook directory: ${hook_dir}"
@@ -1651,7 +2019,11 @@ main() {
             exit $?
             ;;
         template)
-            do_template "$action_arg" "$hook_dir" "$dry_run"
+            do_template "$action_arg" "$hook_dir" "$settings_dir" "$dry_run"
+            exit $?
+            ;;
+        message)
+            do_message "$action_arg" "$action_arg_type" "$hook_dir" "$settings_dir" "$dry_run"
             exit $?
             ;;
         update)

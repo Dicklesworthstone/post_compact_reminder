@@ -1,0 +1,164 @@
+# Release Workflow for post_compact_reminder
+# Triggered by version tags (v*)
+#
+# Creates GitHub releases with checksums for self-update verification
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Only write permission needed for creating releases
+permissions:
+  contents: write
+
+# Prevent concurrent releases
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Create Release with Checksums
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Releasing version: $VERSION"
+
+      - name: Verify script version matches tag
+        run: |
+          script_version=$(grep -m1 'VERSION=' install-post-compact-reminder.sh | cut -d'"' -f2)
+          tag_version="${{ steps.version.outputs.version }}"
+
+          if [[ "$script_version" != "$tag_version" ]]; then
+            echo "::error::Script VERSION ($script_version) does not match tag ($tag_version)"
+            echo "Please update VERSION in install-post-compact-reminder.sh before tagging"
+            exit 1
+          fi
+
+          echo "Version check passed: $tag_version"
+
+      - name: Verify VERSION file matches tag
+        run: |
+          if [[ -f VERSION ]]; then
+            file_version=$(cat VERSION | tr -d '\r\n')
+            tag_version="${{ steps.version.outputs.version }}"
+
+            if [[ "$file_version" != "$tag_version" ]]; then
+              echo "::error::VERSION file ($file_version) does not match tag ($tag_version)"
+              exit 1
+            fi
+          fi
+
+      - name: Compute SHA256 checksums
+        run: |
+          echo "Computing checksums..."
+          sha256sum install-post-compact-reminder.sh > checksums.txt
+          cat checksums.txt
+
+      - name: Create individual checksum files
+        run: |
+          sha256sum install-post-compact-reminder.sh | awk '{print $1}' > install-post-compact-reminder.sh.sha256
+
+      - name: Generate release notes
+        run: |
+          cat > release_notes.md << 'RELEASE_EOF'
+          ## Installation
+
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/post_compact_reminder/main/install-post-compact-reminder.sh | bash
+          ```
+
+          ## Verify Installation (Optional)
+
+          After downloading, verify the checksum:
+
+          ```bash
+          # Download the installer
+          curl -fsSL -o install-post-compact-reminder.sh \
+            https://github.com/Dicklesworthstone/post_compact_reminder/releases/download/v${{ steps.version.outputs.version }}/install-post-compact-reminder.sh
+
+          # Verify checksum
+          expected=$(curl -fsSL https://github.com/Dicklesworthstone/post_compact_reminder/releases/download/v${{ steps.version.outputs.version }}/install-post-compact-reminder.sh.sha256)
+          actual=$(sha256sum install-post-compact-reminder.sh | awk '{print $1}')
+          if [[ "$expected" == "$actual" ]]; then
+            echo "Checksum verified!"
+            bash install-post-compact-reminder.sh
+          else
+            echo "CHECKSUM MISMATCH - do not run!"
+          fi
+          ```
+
+          ## Checksums
+
+          SHA256 checksums for this release are attached as `checksums.txt`.
+          RELEASE_EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Post-Compact Reminder v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          files: |
+            install-post-compact-reminder.sh
+            checksums.txt
+            install-post-compact-reminder.sh.sha256
+          generate_release_notes: true
+          append_body: true
+          fail_on_unmatched_files: true
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+  notify-acfs:
+    name: Notify ACFS
+    runs-on: ubuntu-latest
+    needs: release
+    if: ${{ vars.ACFS_NOTIFICATIONS_ENABLED == 'true' || github.repository == 'Dicklesworthstone/post_compact_reminder' }}
+    steps:
+      - name: Check for dispatch token
+        id: check_token
+        run: |
+          if [[ -z "${{ secrets.ACFS_REPO_DISPATCH_TOKEN }}" ]]; then
+            echo "::warning::ACFS_REPO_DISPATCH_TOKEN not configured - skipping ACFS notification"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger ACFS checksum update
+        if: steps.check_token.outputs.skip != 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.ACFS_REPO_DISPATCH_TOKEN }}
+          repository: Dicklesworthstone/agentic_coding_flywheel_setup
+          event-type: upstream-changed
+          client-payload: |
+            {
+              "tool": "post_compact_reminder",
+              "repo": "${{ github.repository }}",
+              "version": "${{ needs.release.outputs.version }}",
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}",
+              "event": "${{ github.event_name }}",
+              "actor": "${{ github.actor }}",
+              "timestamp": "${{ github.event.head_commit.timestamp }}"
+            }
+
+      - name: Log dispatch
+        if: steps.check_token.outputs.skip != 'true'
+        run: |
+          echo "Dispatched upstream-changed event to ACFS"
+          echo "  Tool: post_compact_reminder"
+          echo "  Version: ${{ needs.release.outputs.version }}"
+          echo "  SHA: ${{ github.sha }}"

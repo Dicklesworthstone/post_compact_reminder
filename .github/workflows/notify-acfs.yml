@@ -1,0 +1,73 @@
+# .github/workflows/notify-acfs.yml
+#
+# Notifies ACFS (agentic_coding_flywheel_setup) when the installer script changes
+# on the main branch, triggering checksum updates in the downstream repository.
+#
+# Setup:
+#   1. Create a PAT with 'contents:read' on agentic_coding_flywheel_setup
+#   2. Add it as a secret named ACFS_REPO_DISPATCH_TOKEN in this repo
+#   3. Optionally set ACFS_NOTIFICATIONS_ENABLED=true in repository variables
+
+name: Notify ACFS of Installer Changes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'install-post-compact-reminder.sh'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual checksum update'
+
+# Minimal permissions - no repository access needed
+permissions: {}
+
+# Prevent duplicate notifications for the same commit
+concurrency:
+  group: acfs-notify-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  notify-acfs:
+    name: Trigger ACFS Checksum Update
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ vars.ACFS_NOTIFICATIONS_ENABLED == 'true' || github.repository == 'Dicklesworthstone/post_compact_reminder' }}
+    steps:
+      - name: Validate dispatch token exists
+        id: validate
+        run: |
+          if [[ -z "${{ secrets.ACFS_REPO_DISPATCH_TOKEN }}" ]]; then
+            echo "::error::Missing secret ACFS_REPO_DISPATCH_TOKEN"
+            echo "::error::Add a PAT with repo access for Dicklesworthstone/agentic_coding_flywheel_setup"
+            exit 1
+          fi
+
+      - name: Trigger ACFS checksum update
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.ACFS_REPO_DISPATCH_TOKEN }}
+          repository: Dicklesworthstone/agentic_coding_flywheel_setup
+          event-type: upstream-changed
+          client-payload: |
+            {
+              "tool": "post_compact_reminder",
+              "repo": "${{ github.repository }}",
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}",
+              "event": "${{ github.event_name }}",
+              "actor": "${{ github.actor }}",
+              "timestamp": "${{ github.event.head_commit.timestamp || '' }}",
+              "reason": "${{ github.event.inputs.reason || '' }}"
+            }
+
+      - name: Log dispatch result
+        run: |
+          echo "Dispatched upstream-changed event to ACFS"
+          echo "  Tool: post_compact_reminder"
+          echo "  SHA: ${{ github.sha }}"
+          echo "  Event: ${{ github.event_name }}"
+          echo "  Triggered by: ${{ github.actor }}"

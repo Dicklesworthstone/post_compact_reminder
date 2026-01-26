@@ -166,6 +166,10 @@ The installer detects your package manager and offers to auto-install missing de
 
    # Or apply a preset directly
    ./install-post-compact-reminder.sh --template detailed
+
+   # Or set a custom message non-interactively
+   ./install-post-compact-reminder.sh --message "Context compacted. Re-read AGENTS.md."
+   ./install-post-compact-reminder.sh --message-file ./my-reminder.txt
    ```
 
 ---
@@ -179,6 +183,7 @@ The installer detects your package manager and offers to auto-install missing de
 ./install-post-compact-reminder.sh --force       # Reinstall even if up to date
 ./install-post-compact-reminder.sh --dry-run     # Preview changes, modify nothing
 ./install-post-compact-reminder.sh --yes         # Skip confirmation prompts
+./install-post-compact-reminder.sh --skip-deps   # Do not auto-install missing dependencies
 ./install-post-compact-reminder.sh --uninstall   # Remove hook and settings entry
 ```
 
@@ -190,6 +195,8 @@ The installer detects your package manager and offers to auto-install missing de
 ./install-post-compact-reminder.sh --template detailed   # Apply preset: step-by-step instructions
 ./install-post-compact-reminder.sh --template checklist  # Apply preset: markdown checklist
 ./install-post-compact-reminder.sh --template default    # Apply preset: standard message
+./install-post-compact-reminder.sh --message "..."       # Custom message (single-line)
+./install-post-compact-reminder.sh --message-file ./msg.txt  # Custom message from file
 ./install-post-compact-reminder.sh --show-template       # Show currently installed message
 ```
 
@@ -197,6 +204,7 @@ The installer detects your package manager and offers to auto-install missing de
 
 ```bash
 ./install-post-compact-reminder.sh --status     # Full health check (script, settings, deps, hook test)
+./install-post-compact-reminder.sh --status --json  # JSON status output for automation
 ./install-post-compact-reminder.sh --diff       # Compare installed vs. available version
 ./install-post-compact-reminder.sh --verbose    # Enable debug output during any operation
 ./install-post-compact-reminder.sh --log out.log  # Log all operations to file
@@ -487,7 +495,7 @@ Yes. The `settings.json` hook configuration works across all Claude Code interfa
 
 ### Can I add more files to the reminder (not just AGENTS.md)?
 
-Yes. Edit the hook script or use `--interactive` to enter a custom message:
+Yes. Edit the hook script or use `--interactive`, `--message`, or `--message-file` to enter a custom message:
 
 ```
 Context compacted. Before continuing:

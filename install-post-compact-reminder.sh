@@ -228,6 +228,34 @@ repeat_char() {
     printf '%s' "$out"
 }
 
+# Calculate display width (emojis are 2 columns, ASCII is 1)
+display_width() {
+    local str="$1"
+    # Use wc -L for display width (works on GNU coreutils with UTF-8 locale)
+    # Fall back to character count if wc -L returns 0 or fails
+    local width
+    width=$(printf '%s' "$str" | LC_ALL=en_US.UTF-8 wc -L 2>/dev/null | tr -d ' ')
+    if [[ -z "$width" ]] || (( width == 0 && ${#str} > 0 )); then
+        # Fallback: count characters plus extra for likely emojis (4-byte UTF-8)
+        width=${#str}
+    fi
+    printf '%d' "$width"
+}
+
+# Pad string to display width (accounting for wide characters)
+pad_to_width() {
+    local str="$1"
+    local target_width="$2"
+    local current_width
+    current_width=$(display_width "$str")
+    local padding=$((target_width - current_width))
+    if (( padding > 0 )); then
+        printf '%s%*s' "$str" "$padding" ""
+    else
+        printf '%s' "$str"
+    fi
+}
+
 split_lines() {
     local input="$1"
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -284,7 +312,7 @@ print_box() {
     local max=0
     local line len
     for line in "${lines[@]}"; do
-        len=${#line}
+        len=$(display_width "$line")
         if (( len > max )); then
             max=$len
         fi
@@ -296,9 +324,11 @@ print_box() {
     local hline
     hline=$(repeat_char "$h" $((max + 2)))
     printf "%s%s%s%s\n" "$indent" "${border_color}${tl}" "$hline" "${tr}${NC}"
+    local padded
     for line in "${lines[@]}"; do
-        printf "%s%s${text_color} %-${max}s ${NC}%s\n" \
-            "$indent" "${border_color}${v}${NC}" "$line" "${border_color}${v}${NC}"
+        padded=$(pad_to_width "$line" "$max")
+        printf "%s%s${text_color} %s ${NC}%s\n" \
+            "$indent" "${border_color}${v}${NC}" "$padded" "${border_color}${v}${NC}"
     done
     printf "%s%s%s%s\n" "$indent" "${border_color}${bl}" "$hline" "${br}${NC}"
 }
@@ -330,7 +360,7 @@ print_banner() {
     [[ "$QUIET" == "true" ]] && return
     local -a lines=(
         ""
-        "🧠 post-compact-reminder v${VERSION}"
+        "🧠  post-compact-reminder v${VERSION}"
         ""
         "\"We stop your bot from going on a post-compaction rampage.\""
         ""
@@ -2328,9 +2358,9 @@ print_summary() {
 
     echo ""
     if [[ "$dry_run" == "true" ]]; then
-        print_box "box" "" "${BLUE}${BOLD}" "${BLUE}${BOLD}" 62 "📋 DRY RUN ${EM_DASH} No changes were made"
+        print_box "box" "" "${BLUE}${BOLD}" "${BLUE}${BOLD}" 62 " 📋  DRY RUN ${EM_DASH} No changes were made"
     else
-        print_box "box" "" "${GREEN}${BOLD}" "${GREEN}${BOLD}" 62 "🎉 Installation complete!"
+        print_box "box" "" "${GREEN}${BOLD}" "${GREEN}${BOLD}" 62 " 🎉  Installation complete!"
     fi
     echo ""
     echo -e "  ${WHITE}${BOLD}${UNDERLINE}👁️  What Claude sees after compaction:${NC}"

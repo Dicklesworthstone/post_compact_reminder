@@ -336,22 +336,32 @@ print_box() {
 # -----------------------------------------------------------------------------
 # Message Templates
 # -----------------------------------------------------------------------------
-TEMPLATE_MINIMAL="Context compacted. Re-read AGENTS.md."
+TEMPLATE_MINIMAL="🚨 MANDATORY: Context compacted. Read AGENTS.md NOW. Confirm by stating what you learned."
 
-TEMPLATE_DETAILED="Context was just compacted. Please:
-1. Re-read AGENTS.md for project conventions
+TEMPLATE_DETAILED="🚨 MANDATORY: Context was just compacted. STOP. BEFORE doing anything else, you MUST:
+1. Read AGENTS.md completely
 2. Check the current task list
 3. Review recent git commits (git log --oneline -5)
-4. Verify any uncommitted changes (git status)"
+4. Verify any uncommitted changes (git status)
 
-TEMPLATE_CHECKLIST="Context compacted. Before continuing:
-- [ ] Re-read AGENTS.md
+After completing these steps, confirm by briefly stating what key rules you found in AGENTS.md.
+DO NOT proceed with any other work until you have confirmed."
+
+TEMPLATE_CHECKLIST="🚨 MANDATORY: Context compacted. STOP. Complete ALL items before continuing:
+- [ ] Read AGENTS.md completely
 - [ ] Check task list (/tasks)
 - [ ] Review recent commits
 - [ ] Run test suite
-- [ ] Check git status"
+- [ ] Check git status
 
-TEMPLATE_DEFAULT="IMPORTANT: Context was just compacted. Please reread AGENTS.md to refresh your understanding of project conventions and agent coordination patterns."
+After completing, confirm by stating: \"I have completed the checklist. Key AGENTS.md rules: [list them]\"
+DO NOT proceed until you have confirmed."
+
+TEMPLATE_DEFAULT="🚨 IMPORTANT: Context was just compacted. STOP. You MUST:
+1. Read AGENTS.md NOW
+2. Confirm by briefly stating what key rules/conventions you found
+
+Do not proceed with any task until you have read the file and confirmed what you learned."
 
 # -----------------------------------------------------------------------------
 # Banner
@@ -672,6 +682,12 @@ MARKER_DIR="\${XDG_STATE_HOME:-\$HOME/.local/state}/claude-compact-reminder"
 MARKER_FILE="\$MARKER_DIR/compact-pending"
 MESSAGE=${message_quoted}
 
+# Read stdin to avoid broken pipe if Claude Code writes a payload.
+# Guard against blocking when run interactively.
+if [[ ! -t 0 ]]; then
+    cat >/dev/null 2>&1 || true
+fi
+
 # Check if marker file exists
 if [[ -f "\$MARKER_FILE" ]]; then
     # Remove the marker file FIRST to prevent duplicate reminders
@@ -801,26 +817,42 @@ try:
 
     # Handle PreCompact hook
     precompact_hooks = settings['hooks'].get('PreCompact', [])
-    found_precompact = False
+    modified_existing = False
     new_precompact = []
+    saw_precompact_group = False
 
     for hook_group in precompact_hooks:
+        if not isinstance(hook_group, dict):
+            new_precompact.append(hook_group)
+            continue
+        saw_precompact_group = True
+        hooks_list = hook_group.get('hooks', [])
+        if not isinstance(hooks_list, list):
+            hooks_list = []
         new_hooks = []
-        for hook in hook_group.get('hooks', []):
+        has_marker = False
+        for hook in hooks_list:
+            if not isinstance(hook, dict):
+                new_hooks.append(hook)
+                continue
             cmd = hook.get('command', '')
             if 'claude-precompact-marker' in cmd:
-                found_precompact = True
+                has_marker = True
                 new_hook = dict(hook)
+                if new_hook.get('command') != precompact_path:
+                    modified_existing = True
                 new_hook['command'] = precompact_path
                 new_hooks.append(new_hook)
             else:
                 new_hooks.append(hook)
-        if new_hooks:
-            new_group = dict(hook_group)
-            new_group['hooks'] = new_hooks
-            new_precompact.append(new_group)
+        if not has_marker:
+            new_hooks.append({"type": "command", "command": precompact_path})
+            modified_existing = True
+        new_group = dict(hook_group)
+        new_group['hooks'] = new_hooks
+        new_precompact.append(new_group)
 
-    if not found_precompact:
+    if not saw_precompact_group:
         new_precompact.append({
             "matcher": "*",
             "hooks": [{"type": "command", "command": precompact_path}]
@@ -830,26 +862,41 @@ try:
 
     # Handle UserPromptSubmit hook
     prompt_hooks = settings['hooks'].get('UserPromptSubmit', [])
-    found_prompt = False
     new_prompt = []
+    saw_prompt_group = False
 
     for hook_group in prompt_hooks:
+        if not isinstance(hook_group, dict):
+            new_prompt.append(hook_group)
+            continue
+        saw_prompt_group = True
+        hooks_list = hook_group.get('hooks', [])
+        if not isinstance(hooks_list, list):
+            hooks_list = []
         new_hooks = []
-        for hook in hook_group.get('hooks', []):
+        has_prompt = False
+        for hook in hooks_list:
+            if not isinstance(hook, dict):
+                new_hooks.append(hook)
+                continue
             cmd = hook.get('command', '')
             if 'claude-prompt-compact-check' in cmd:
-                found_prompt = True
+                has_prompt = True
                 new_hook = dict(hook)
+                if new_hook.get('command') != prompt_path:
+                    modified_existing = True
                 new_hook['command'] = prompt_path
                 new_hooks.append(new_hook)
             else:
                 new_hooks.append(hook)
-        if new_hooks:
-            new_group = dict(hook_group)
-            new_group['hooks'] = new_hooks
-            new_prompt.append(new_group)
+        if not has_prompt:
+            new_hooks.append({"type": "command", "command": prompt_path})
+            modified_existing = True
+        new_group = dict(hook_group)
+        new_group['hooks'] = new_hooks
+        new_prompt.append(new_group)
 
-    if not found_prompt:
+    if not saw_prompt_group:
         new_prompt.append({
             "hooks": [{"type": "command", "command": prompt_path}]
         })
@@ -870,7 +917,7 @@ try:
         temp_path = tf.name
 
     shutil.move(temp_path, settings_file)
-    print('updated' if (found_precompact or found_prompt) else 'added')
+    print('updated' if modified_existing else 'added')
 
 except Exception as e:
     if 'temp_path' in locals() and temp_path and os.path.exists(temp_path):

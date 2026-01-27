@@ -153,8 +153,11 @@ The installer detects your package manager and offers to auto-install missing de
 
 3. **That's it.** Next time context compacts and you send a message, Claude will automatically see:
    ```
-   IMPORTANT: Context was just compacted. Please reread AGENTS.md to refresh your understanding
-   of project conventions and agent coordination patterns.
+   🚨 IMPORTANT: Context was just compacted. STOP. You MUST:
+   1. Read AGENTS.md NOW
+   2. Confirm by briefly stating what key rules/conventions you found
+
+   Do not proceed with any task until you have read the file and confirmed what you learned.
    ```
 
 4. **Optionally customize** the reminder message:
@@ -166,7 +169,7 @@ The installer detects your package manager and offers to auto-install missing de
    ./install-post-compact-reminder-workaround.sh --template detailed
 
    # Or set a custom message non-interactively
-   ./install-post-compact-reminder-workaround.sh --message "Context compacted. Re-read AGENTS.md."
+   ./install-post-compact-reminder-workaround.sh --message "🚨 MANDATORY: Context compacted. Read AGENTS.md NOW."
    ./install-post-compact-reminder-workaround.sh --message-file ./my-reminder.txt
    ```
 
@@ -190,14 +193,14 @@ The installer detects your package manager and offers to auto-install missing de
 
 ```bash
 ./install-post-compact-reminder-workaround.sh --interactive         # Interactive template picker
-./install-post-compact-reminder-workaround.sh --template minimal    # Apply preset: "Context compacted. Re-read AGENTS.md."
+./install-post-compact-reminder-workaround.sh --template minimal    # Apply preset: mandatory short message
 ./install-post-compact-reminder-workaround.sh --template detailed   # Apply preset: step-by-step instructions
 ./install-post-compact-reminder-workaround.sh --template checklist  # Apply preset: markdown checklist
 ./install-post-compact-reminder-workaround.sh --template default    # Apply preset: standard message
 ./install-post-compact-reminder-workaround.sh --message "..."       # Custom message (single-line)
 ./install-post-compact-reminder-workaround.sh --message-file ./msg.txt  # Custom message from file
 ./install-post-compact-reminder-workaround.sh --update-reminder-message # Update message interactively
-./install-post-compact-reminder-workaround.sh --update-reminder-message "Context compacted. Re-read AGENTS.md."
+./install-post-compact-reminder-workaround.sh --update-reminder-message "🚨 MANDATORY: Read AGENTS.md NOW."
 ./install-post-compact-reminder-workaround.sh --update-reminder-message-file ./msg.txt
 ./install-post-compact-reminder-workaround.sh --show-template       # Show currently installed message
 ```
@@ -298,8 +301,11 @@ set -e
 
 MARKER_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-compact-reminder"
 MARKER_FILE="$MARKER_DIR/compact-pending"
-MESSAGE="IMPORTANT: Context was just compacted. Please reread AGENTS.md to refresh
-your understanding of project conventions and agent coordination patterns."
+MESSAGE="🚨 IMPORTANT: Context was just compacted. STOP. You MUST:
+1. Read AGENTS.md NOW
+2. Confirm by briefly stating what key rules/conventions you found
+
+Do not proceed with any task until you have read the file and confirmed what you learned."
 
 # Check if marker file exists
 if [[ -f "$MARKER_FILE" ]]; then
@@ -417,36 +423,45 @@ The marker file bridges the gap between these two events.
 
 ## Message Templates
 
-The installer includes four built-in templates:
+The installer includes four built-in templates. All templates use mandatory, directive language **with confirmation requirements** to ensure Claude actually reads AGENTS.md and confirms what it learned, rather than treating it as a polite suggestion to ignore.
 
 ### `minimal`
 ```
-Context compacted. Re-read AGENTS.md.
+🚨 MANDATORY: Context compacted. Read AGENTS.md NOW. Confirm by stating what you learned.
 ```
 
 ### `detailed`
 ```
-Context was just compacted. Please:
-1. Re-read AGENTS.md for project conventions
+🚨 MANDATORY: Context was just compacted. STOP. BEFORE doing anything else, you MUST:
+1. Read AGENTS.md completely
 2. Check the current task list
 3. Review recent git commits (git log --oneline -5)
 4. Verify any uncommitted changes (git status)
+
+After completing these steps, confirm by briefly stating what key rules you found in AGENTS.md.
+DO NOT proceed with any other work until you have confirmed.
 ```
 
 ### `checklist`
 ```
-Context compacted. Before continuing:
-- [ ] Re-read AGENTS.md
+🚨 MANDATORY: Context compacted. STOP. Complete ALL items before continuing:
+- [ ] Read AGENTS.md completely
 - [ ] Check task list (/tasks)
 - [ ] Review recent commits
 - [ ] Run test suite
 - [ ] Check git status
+
+After completing, confirm by stating: "I have completed the checklist. Key AGENTS.md rules: [list them]"
+DO NOT proceed until you have confirmed.
 ```
 
 ### `default`
 ```
-IMPORTANT: Context was just compacted. Please reread AGENTS.md to refresh your understanding
-of project conventions and agent coordination patterns.
+🚨 IMPORTANT: Context was just compacted. STOP. You MUST:
+1. Read AGENTS.md NOW
+2. Confirm by briefly stating what key rules/conventions you found
+
+Do not proceed with any task until you have read the file and confirmed what you learned.
 ```
 
 ### Custom Messages
@@ -581,10 +596,12 @@ Yes. The `settings.json` hook configuration works across all Claude Code interfa
 Yes. Edit the hook script or use `--interactive`, `--message`, or `--message-file` to enter a custom message:
 
 ```
-Context compacted. Before continuing:
-1. Re-read AGENTS.md
-2. Re-read docs/ARCHITECTURE.md
+🚨 MANDATORY: Context compacted. STOP. You MUST:
+1. Read AGENTS.md completely
+2. Read docs/ARCHITECTURE.md
 3. Check .env.example for required environment variables
+
+Confirm by stating what key rules you found. Do not proceed until confirmed.
 ```
 
 ### Does the PreCompact hook block compaction?

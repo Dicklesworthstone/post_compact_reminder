@@ -110,7 +110,7 @@ echo '{"session_id": "test-123", "source": "compact"}' | \
   ~/.local/bin/claude-post-compact-reminder
 
 # Expected output:
-# Context was just compacted. Please reread AGENTS.md...
+# 🚨 IMPORTANT: Context was just compacted. STOP. You MUST...
 
 # Test hook with startup source (should output nothing)
 echo '{"session_id": "test-123", "source": "startup"}' | \
@@ -187,11 +187,14 @@ Context fills up → Compaction → SessionStart (source: "compact") → Hook fi
 
 ### Hook Output Format
 
-When triggered, the hook outputs:
+When triggered, the hook outputs (with confirmation requirement):
 
 ```
-Context was just compacted. Please reread AGENTS.md to refresh your understanding
-of project conventions and agent coordination patterns.
+🚨 IMPORTANT: Context was just compacted. STOP. You MUST:
+1. Read AGENTS.md NOW
+2. Confirm by briefly stating what key rules/conventions you found
+
+Do not proceed with any task until you have read the file and confirmed what you learned.
 ```
 
 ### Settings.json Configuration

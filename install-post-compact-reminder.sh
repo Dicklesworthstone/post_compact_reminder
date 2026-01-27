@@ -336,23 +336,33 @@ print_box() {
 # -----------------------------------------------------------------------------
 # Message Templates
 # -----------------------------------------------------------------------------
-TEMPLATE_MINIMAL="Context compacted. Re-read AGENTS.md."
+TEMPLATE_MINIMAL="🚨 MANDATORY: Context compacted. Read AGENTS.md NOW. Confirm by stating what you learned."
 
-TEMPLATE_DETAILED="Context was just compacted. Please:
-1. Re-read AGENTS.md for project conventions
+TEMPLATE_DETAILED="🚨 MANDATORY: Context was just compacted. STOP. BEFORE doing anything else, you MUST:
+1. Read AGENTS.md completely
 2. Check the current task list
 3. Review recent git commits (git log --oneline -5)
-4. Verify any uncommitted changes (git status)"
+4. Verify any uncommitted changes (git status)
 
-TEMPLATE_CHECKLIST="Context compacted. Before continuing:
-- [ ] Re-read AGENTS.md
+After completing these steps, confirm by briefly stating what key rules you found in AGENTS.md.
+DO NOT proceed with any other work until you have confirmed."
+
+TEMPLATE_CHECKLIST="🚨 MANDATORY: Context compacted. STOP. Complete ALL items before continuing:
+- [ ] Read AGENTS.md completely
 - [ ] Check task list (/tasks)
 - [ ] Review recent commits
 - [ ] Run test suite
-- [ ] Check git status"
+- [ ] Check git status
+
+After completing, confirm by stating: \"I have completed the checklist. Key AGENTS.md rules: [list them]\"
+DO NOT proceed until you have confirmed."
 
 TEMPLATE_DEFAULT="
-🚨 *IMPORTANT*: Context was just compacted. Please reread AGENTS.md to refresh your understanding of project conventions and agent coordination patterns.
+🚨 IMPORTANT: Context was just compacted. STOP. You MUST:
+1. Read AGENTS.md NOW
+2. Confirm by briefly stating what key rules/conventions you found
+
+Do not proceed with any task until you have read the file and confirmed what you learned.
 "
 
 # -----------------------------------------------------------------------------

@@ -24,7 +24,7 @@
 
 set -euo pipefail
 
-VERSION="1.2.4"
+VERSION="1.2.5"
 SCRIPT_NAME="claude-post-compact-reminder"
 LOCK_FILE="${TMPDIR:-/tmp}/.post-compact-reminder-install-${USER:-$(id -u)}.lock"
 GITHUB_RAW_URL="https://github.com/Dicklesworthstone/post_compact_reminder/raw/refs/heads/main/install-post-compact-reminder.sh"
@@ -32,6 +32,7 @@ GITHUB_RELEASES_URL="https://github.com/Dicklesworthstone/post_compact_reminder/
 GITHUB_API_URL="https://api.github.com/repos/Dicklesworthstone/post_compact_reminder/releases/latest"
 
 # Changelog (newest first)
+CHANGELOG_1_2_5="(2026-01-26) Mandatory confirmation requirement in all templates - Claude must state what rules it found before proceeding."
 CHANGELOG_1_2_4="UI alignment polish (auto-sized boxes), new --update-reminder-message CLI, and safer non-interactive behavior (TTY guard + auto no-color/no-unicode). Show-template now renders the actual installed message."
 CHANGELOG_1_2_3="Security hardening: Escaped special characters in generated hook script to prevent potential code injection from custom messages."
 CHANGELOG_1_2_2="Fixed lock file permission issues in multi-user environments. Improved regex precision for Bash-based JSON parsing fallback. Added cleanup for temporary files on failure."
@@ -1775,10 +1776,13 @@ do_changelog() {
 
     echo -e "${WHITE}${BOLD}${UNDERLINE}Changelog${NC}"
     echo ""
-    echo -e "  ${GREEN}${BOLD}v1.2.4${NC}"
+    echo -e "  ${GREEN}${BOLD}v1.2.5${NC}"
+    echo -e "  ${DIM}$CHANGELOG_1_2_5${NC}"
+    echo ""
+    echo -e "  ${CYAN}${BOLD}v1.2.4${NC}"
     echo -e "  ${DIM}$CHANGELOG_1_2_4${NC}"
     echo ""
-    echo -e "  ${GREEN}${BOLD}v1.2.3${NC}"
+    echo -e "  ${CYAN}${BOLD}v1.2.3${NC}"
     echo -e "  ${DIM}$CHANGELOG_1_2_3${NC}"
     echo ""
     echo -e "  ${GREEN}${BOLD}v1.2.2${NC}"

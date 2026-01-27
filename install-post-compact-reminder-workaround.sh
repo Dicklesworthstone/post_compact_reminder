@@ -31,7 +31,7 @@
 
 set -euo pipefail
 
-VERSION="1.2.4"
+VERSION="1.2.5"
 PRECOMPACT_SCRIPT="claude-precompact-marker"
 PROMPT_SCRIPT="claude-prompt-compact-check"
 LOCK_FILE="${TMPDIR:-/tmp}/.post-compact-reminder-workaround-${USER:-$(id -u)}.lock"
@@ -40,6 +40,7 @@ GITHUB_RELEASES_URL="https://github.com/Dicklesworthstone/post_compact_reminder/
 GITHUB_API_URL="https://api.github.com/repos/Dicklesworthstone/post_compact_reminder/releases/latest"
 
 # Changelog (newest first)
+CHANGELOG_1_2_5="(2026-01-26) Mandatory confirmation requirement in all templates - Claude must state what rules it found before proceeding."
 CHANGELOG_1_2_4="Feature parity with main installer: full CLI, templates, interactive mode, self-update, completions, JSON status, doctor, diff, restore, and more."
 CHANGELOG_1_0_0="Initial workaround release for SessionStart compact matcher bug."
 
@@ -1958,7 +1959,10 @@ do_changelog() {
 
     echo -e "${WHITE}${BOLD}${UNDERLINE}Changelog${NC}"
     echo ""
-    echo -e "  ${GREEN}${BOLD}v1.2.4${NC}"
+    echo -e "  ${GREEN}${BOLD}v1.2.5${NC}"
+    echo -e "  ${DIM}$CHANGELOG_1_2_5${NC}"
+    echo ""
+    echo -e "  ${CYAN}${BOLD}v1.2.4${NC}"
     echo -e "  ${DIM}$CHANGELOG_1_2_4${NC}"
     echo ""
     echo -e "  ${CYAN}${BOLD}v1.0.0${NC}"

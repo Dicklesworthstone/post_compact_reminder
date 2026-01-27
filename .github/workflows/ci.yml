@@ -114,7 +114,7 @@ jobs:
       - name: Test hook with compact source
         run: |
           output=$(echo '{"session_id": "test-ci", "source": "compact"}' | "$HOME/.local/bin/claude-post-compact-reminder")
-          if echo "$output" | grep -q "post-compact-reminder"; then
+          if [[ -n "$output" ]] && echo "$output" | grep -q "AGENTS.md"; then
             echo "Hook correctly outputs reminder for compact source"
           else
             echo "::error::Hook did not output expected reminder"

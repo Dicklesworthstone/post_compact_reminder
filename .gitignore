@@ -15,3 +15,6 @@ Thumbs.db
 
 # Lock files
 *.lock
+
+# bv (beads viewer) local config and caches
+.bv/

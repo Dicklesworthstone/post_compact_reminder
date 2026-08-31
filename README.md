@@ -504,6 +504,18 @@ Nothing bad. The installer is idempotent: it detects existing installations, com
 ## Related
 
 - [Claude Code Hooks Documentation](https://docs.anthropic.com/en/docs/claude-code/hooks): Official reference for all hook types
+- [compact-canon](https://github.com/tonydzi/compact-canon): Complementary community project attacking the same amnesia from the other side. This hook restores your *standing rules* after compaction; compact-canon is a measured paste-block format that preserves the *session-specific* layer (rejected alternatives, exact paths/IDs, mid-flight state) through a manual `/compact`. Their measurements: bare `/compact` used the stock template 354/354 times, while an inline structured block survived 7/7 headers and 15/15 seeded facts. The two mechanisms compose.
+- [ClaudeCode-RulesAfterCompact-Windows-AutoHook](https://github.com/miradorventus/ClaudeCode-RulesAfterCompact-Windows-AutoHook): Community-built Windows counterpart (independent implementation, credited to this project as the origin of the approach). The `matcher: "compact"` mechanism carries over to Windows unchanged; only this repo's POSIX installer doesn't.
+
+### Note for Windows users hand-rolling this hook
+
+PowerShell re-encodes hook stdout in the console's codepage on the way out, while Claude Code decodes it as UTF-8 — silently corrupting non-ASCII characters (this repo's templates open with `🚨`, which becomes a literal `?` under cp1252/cp850). The trap: `[Console]::OutputEncoding.WebName` can *report* `utf-8` while output is still being mangled, because reading the property doesn't rebuild the cached stdout writer. The fix is to **assign** it in the hook script:
+
+```powershell
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new(0)
+```
+
+(Credit: the miradorventus repo above, which documented this per-machine-dependent failure mode with byte-level evidence.)
 
 ---
 
